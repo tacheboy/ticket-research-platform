@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Ticker Research Platform</title>
+<style>
+  :root {
+    --bg:#0d1117; --panel:#161b22; --border:#30363d; --text:#e6edf3;
+    --muted:#8b949e; --accent:#2f81f7; --buy:#3fb950; --sell:#f85149; --hold:#d29922;
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;
+         background:var(--bg); color:var(--text); }
+  header { padding:28px 20px 10px; text-align:center; }
+  h1 { margin:0; font-size:26px; }
+  .tag { color:var(--muted); font-size:13px; margin-top:6px; }
+  main { max-width:920px; margin:0 auto; padding:16px 20px 60px; }
+  .search { display:flex; gap:10px; justify-content:center; margin:18px 0; flex-wrap:wrap; }
+  input { background:var(--panel); border:1px solid var(--border); color:var(--text);
+          padding:12px 14px; border-radius:8px; font-size:16px; width:240px; text-transform:uppercase; }
+  button { background:var(--accent); color:#fff; border:0; padding:12px 18px; border-radius:8px;
+           font-size:15px; cursor:pointer; font-weight:600; }
+  button.secondary { background:var(--panel); border:1px solid var(--border); }
+  button:disabled { opacity:.5; cursor:not-allowed; }
+  .examples { text-align:center; color:var(--muted); font-size:13px; margin-bottom:8px; }
+  .examples a { color:var(--accent); cursor:pointer; margin:0 4px; }
+  .panel { background:var(--panel); border:1px solid var(--border); border-radius:12px;
+           padding:18px 20px; margin-top:16px; }
+  .banner { display:flex; align-items:center; gap:20px; flex-wrap:wrap; }
+  .rec { font-size:30px; font-weight:800; padding:8px 22px; border-radius:10px; color:#fff; }
+  .rec.BUY{background:var(--buy);} .rec.SELL{background:var(--sell);} .rec.HOLD{background:var(--hold);}
+  .meta { display:flex; gap:24px; flex-wrap:wrap; }
+  .meta div span { display:block; color:var(--muted); font-size:12px; }
+  .meta div b { font-size:18px; }
+  .bar { height:8px; background:#21262d; border-radius:4px; overflow:hidden; margin-top:6px; width:160px; }
+  .bar i { display:block; height:100%; background:var(--accent); }
+  h2 { font-size:16px; border-bottom:1px solid var(--border); padding-bottom:6px; margin:22px 0 10px; }
+  .rationale { white-space:pre-wrap; line-height:1.55; font-size:14px; }
+  .src { color:var(--muted); font-size:12px; font-style:italic; margin-bottom:6px; }
+  table { width:100%; border-collapse:collapse; font-size:13px; }
+  th,td { text-align:left; padding:7px 8px; border-bottom:1px solid var(--border); }
+  th { color:var(--muted); font-weight:600; }
+  .agent { border:1px solid var(--border); border-radius:10px; padding:12px 14px; margin-bottom:12px; }
+  .agent .head { display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap; }
+  .pill { font-size:12px; padding:3px 9px; border-radius:20px; background:#21262d; }
+  .pos{color:var(--buy);} .neg{color:var(--sell);} .contrib{font-variant-numeric:tabular-nums;}
+  .warn { background:#3a2d0a; border:1px solid #6a5009; color:#f2cc60; padding:8px 12px;
+          border-radius:8px; font-size:13px; margin-top:6px; }
+  .err { background:#3a0d0d; border:1px solid #8a2020; color:#ff9a9a; padding:12px;
+         border-radius:8px; margin-top:16px; }
+  .spin { text-align:center; color:var(--muted); margin-top:24px; }
+  footer { text-align:center; color:var(--muted); font-size:11px; padding:20px; max-width:760px; margin:0 auto; }
+</style>
+</head>
+<body>
+<header>
+  <h1>📈 Ticker Research Platform</h1>
+  <div class="tag">Multi-agent investment research — technical · fundamental · sentiment · risk</div>
+</header>
+<main>
+  <div class="search">
+    <input id="ticker" placeholder="Enter ticker (e.g. AAPL)" autocomplete="off"
+           onkeydown="if(event.key==='Enter')run()" />
+    <button id="go" onclick="run()">Analyze</button>
+  </div>
+  <div class="examples" id="examples"></div>
+  <div id="out"></div>
+</main>
+<footer id="disclaimer"></footer>
+
+<script>
+const $ = (id) => document.getElementById(id);
+
+async function loadHealth(){
+  try {
+    const h = await (await fetch('/api/health')).json();
+    const ex = $('examples');
+    ex.innerHTML = 'Try: ' + h.fixture_tickers.map(t =>
+      `<a onclick="setTicker('${t}')">${t}</a>`).join(' · ')
+      + (h.llm_enabled ? ' &nbsp;•&nbsp; LLM narrative: on' : ' &nbsp;•&nbsp; LLM narrative: off (deterministic)');
+  } catch(e){}
+}
+function setTicker(t){ $('ticker').value = t; run(); }
+
+function fmtPct(v){ return v==null ? 'n/a' : (v*100).toFixed(1)+'%'; }
+function fmtNum(v){
+  if(v==null) return 'n/a';
+  if(Math.abs(v)>=1e9) return '$'+(v/1e9).toFixed(1)+'B';
+  return (Math.abs(v)<2 ? v.toFixed(2) : v.toLocaleString());
+}
+
+async function run(){
+  const t = $('ticker').value.trim();
+  if(!t) return;
+  $('go').disabled = true;
+  $('out').innerHTML = '<div class="spin">Running multi-agent analysis…</div>';
+  try {
+    const res = await fetch('/api/analyze?ticker=' + encodeURIComponent(t));
+    const data = await res.json();
+    if(!res.ok){ $('out').innerHTML = `<div class="err">${data.detail || 'Error'}</div>`; return; }
+    render(data, t);
+  } catch(e){
+    $('out').innerHTML = `<div class="err">Request failed: ${e.message}</div>`;
+  } finally { $('go').disabled = false; }
+}
+
+function render(d, queried){
+  const metricFmt = { 'Profit margin':fmtPct, 'Revenue growth':fmtPct, 'ROE':fmtPct };
+  const metrics = Object.entries(d.key_metrics).map(([k,v]) =>
+    `<tr><td>${k}</td><td>${(metricFmt[k]?metricFmt[k](v):fmtNum(v))}</td></tr>`).join('');
+
+  const agents = d.agent_results.map(r => {
+    const sigs = r.signals.map(s =>
+      `<tr><td>${s.name}</td><td>${s.value}</td><td style="color:var(--muted)">${s.interpretation}</td>
+       <td class="contrib ${s.contribution>=0?'pos':'neg'}">${s.contribution>=0?'+':''}${s.contribution.toFixed(2)}</td></tr>`).join('');
+    return `<div class="agent">
+      <div class="head">
+        <b>${cap(r.agent)} agent</b>
+        <span class="pill ${r.score>=0?'pos':'neg'}">score ${r.score>=0?'+':''}${r.score.toFixed(2)}</span>
+        <span class="pill">confidence ${(r.confidence*100).toFixed(0)}%</span>
+      </div>
+      <div style="color:var(--muted);font-size:13px;margin:6px 0">${r.summary}</div>
+      ${sigs ? `<table><tr><th>Signal</th><th>Value</th><th>Read</th><th>Contribution</th></tr>${sigs}</table>`:''}
+    </div>`;
+  }).join('');
+
+  const warns = (d.warnings||[]).map(w => `<div class="warn">⚠ ${w}</div>`).join('');
+
+  $('out').innerHTML = `
+    <div class="panel">
+      <div style="display:flex;justify-content:space-between;align-items:start;gap:10px;flex-wrap:wrap">
+        <div><h2 style="border:0;margin:0">${d.company_name} (${d.ticker})</h2>
+          <div style="color:var(--muted);font-size:12px">as of ${d.as_of} · data: ${d.data_source}</div></div>
+        <button class="secondary" onclick="dl('${d.ticker}')">⬇ Download PDF</button>
+      </div>
+      <div class="banner" style="margin-top:14px">
+        <div class="rec ${d.recommendation}">${d.recommendation}</div>
+        <div class="meta">
+          <div><span>Sentiment</span><b>${d.sentiment}</b></div>
+          <div><span>Confidence</span><b>${(d.confidence*100).toFixed(0)}%</b>
+            <div class="bar"><i style="width:${d.confidence*100}%"></i></div></div>
+          <div><span>Composite score</span><b>${d.composite_score>=0?'+':''}${d.composite_score.toFixed(2)}</b></div>
+          <div><span>Price</span><b>${fmtNum(d.current_price)} ${d.currency}</b></div>
+        </div>
+      </div>
+      ${warns}
+      <h2>Rationale</h2>
+      <div class="src">Narrative source: ${d.rationale_source==='llm'?'Claude (LLM)':'deterministic engine'}</div>
+      <div class="rationale">${escapeHtml(d.rationale)}</div>
+      <h2>Key Metrics</h2>
+      <table>${metrics}</table>
+      <h2>Specialist Agent Breakdown</h2>
+      ${agents}
+    </div>`;
+}
+
+function dl(t){ window.location = '/api/report?ticker=' + encodeURIComponent(t); }
+function cap(s){ return s.charAt(0).toUpperCase()+s.slice(1); }
+function escapeHtml(s){ return (s||'').replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c])); }
+
+$('disclaimer').textContent =
+ 'For educational/informational purposes only — not investment advice. Do your own research.';
+loadHealth();
+</script>
+</body>
+</html>

@@ -1,0 +1,31 @@
+{
+  "name": "Declining Industries Corp.",
+  "currency": "USD",
+  "sector": "Industrials",
+  "price_series": { "start": 80.0, "end": 41.0, "days": 252, "volatility": 0.024, "seed": 13 },
+  "fundamentals": {
+    "pe": null,
+    "forward_pe": 95.0,
+    "peg": null,
+    "pb": 0.9,
+    "profit_margin": -0.06,
+    "revenue_growth": -0.12,
+    "roe": -0.08,
+    "market_cap": 2400000000,
+    "eps": -0.85,
+    "dividend_yield": 0.0
+  },
+  "analyst": {
+    "recommendation_mean": 3.8,
+    "target_mean": 38.0,
+    "target_high": 55.0,
+    "target_low": 25.0,
+    "num_analysts": 9
+  },
+  "risk": { "beta": 1.7 },
+  "news": [
+    { "title": "Declining Industries cuts guidance again as revenue falls and losses widen" },
+    { "title": "Downgrade: analysts warn of weak demand, debt risk, and shrinking market share" },
+    { "title": "Company announces layoffs and restructuring amid ongoing profitability struggles" }
+  ]
+}

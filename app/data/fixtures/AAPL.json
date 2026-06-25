@@ -1,0 +1,31 @@
+{
+  "name": "Apple Inc.",
+  "currency": "USD",
+  "sector": "Technology",
+  "price_series": { "start": 165.0, "end": 212.0, "days": 252, "volatility": 0.010, "seed": 42 },
+  "fundamentals": {
+    "pe": 28.5,
+    "forward_pe": 26.0,
+    "peg": 1.9,
+    "pb": 38.0,
+    "profit_margin": 0.26,
+    "revenue_growth": 0.08,
+    "roe": 1.45,
+    "market_cap": 3150000000000,
+    "eps": 6.95,
+    "dividend_yield": 0.005
+  },
+  "analyst": {
+    "recommendation_mean": 1.9,
+    "target_mean": 235.0,
+    "target_high": 270.0,
+    "target_low": 190.0,
+    "num_analysts": 41
+  },
+  "risk": { "beta": 1.15 },
+  "news": [
+    { "title": "Apple beats earnings estimates on strong services growth and record iPhone demand" },
+    { "title": "Analysts upgrade Apple, raise price target citing AI roadmap and robust margins" },
+    { "title": "Apple announces expanded buyback and dividend increase, boosting investor optimism" }
+  ]
+}

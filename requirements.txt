@@ -1,0 +1,16 @@
+# Core web framework
+fastapi>=0.103.0
+uvicorn>=0.23.0
+
+# Data
+yfinance>=0.2.40
+numpy>=1.26.0
+
+# LLM (optional — system runs fully without an API key)
+anthropic>=0.40.0
+
+# PDF report generation
+reportlab>=4.0.0
+
+# Testing / evals
+pytest>=7.4.0

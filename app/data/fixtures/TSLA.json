@@ -1,0 +1,31 @@
+{
+  "name": "Tesla, Inc.",
+  "currency": "USD",
+  "sector": "Consumer Cyclical",
+  "price_series": { "start": 250.0, "end": 248.0, "days": 252, "volatility": 0.032, "seed": 7 },
+  "fundamentals": {
+    "pe": 72.0,
+    "forward_pe": 65.0,
+    "peg": 4.8,
+    "pb": 12.5,
+    "profit_margin": 0.09,
+    "revenue_growth": 0.02,
+    "roe": 0.18,
+    "market_cap": 790000000000,
+    "eps": 3.45,
+    "dividend_yield": 0.0
+  },
+  "analyst": {
+    "recommendation_mean": 2.9,
+    "target_mean": 245.0,
+    "target_high": 360.0,
+    "target_low": 120.0,
+    "num_analysts": 38
+  },
+  "risk": { "beta": 2.25 },
+  "news": [
+    { "title": "Tesla deliveries miss expectations amid intensifying EV price war and weak demand" },
+    { "title": "Tesla margins under pressure as competition and discounts weigh on profits" },
+    { "title": "Mixed analyst views on Tesla: bulls cite robotaxi optimism, bears warn of valuation risk" }
+  ]
+}
