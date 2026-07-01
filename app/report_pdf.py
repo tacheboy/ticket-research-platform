@@ -82,7 +82,7 @@ def build_pdf(report: TickerReport) -> bytes:
 
     # Rationale
     story.append(Paragraph("Rationale", h2))
-    src = "Claude (LLM)" if report.rationale_source == "llm" else "deterministic engine"
+    src = "OpenAI (LLM)" if report.rationale_source == "llm" else "deterministic engine"
     story.append(Paragraph(f'<i><font size="8" color="grey">Narrative source: {src}</font></i>', body))
     story.append(Spacer(1, 4))
     for line in report.rationale.split("\n"):

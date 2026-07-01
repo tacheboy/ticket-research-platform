@@ -75,10 +75,80 @@ class TickerReport(BaseModel):
     rationale: str
     rationale_source: str = Field(
         default="deterministic",
-        description="'llm' if narrated by Claude, else 'deterministic' template.",
+        description="'llm' if narrated by OpenAI, else 'deterministic' template.",
     )
 
     agent_results: list[AgentResult] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
     data_source: str = "fixture"
+    disclaimer: str = ""
+
+
+# === v2 schemas ===
+# Contracts for the optional LLM *reasoning experiment* (app/reasoning/). This runs
+# in parallel to the deterministic engine above and never alters it. The deterministic
+# TickerReport remains the platform's ground-truth public contract.
+
+
+class ToolCallTrace(BaseModel):
+    """One dynamic tool call the reasoning agent made, with its result/ error."""
+
+    step: int
+    tool: str
+    arguments: dict[str, Any] = Field(default_factory=dict)
+    result: dict[str, Any] = Field(default_factory=dict)
+    error: str | None = None
+
+
+class ReasoningStep(BaseModel):
+    """A labeled phase of the agent loop (plan / reflect), for transparency."""
+
+    phase: str = Field(description="'plan' | 'decide' | 'reflect'.")
+    content: str = ""
+
+
+class ExperimentComparison(BaseModel):
+    """How the LLM's independent call lines up with the deterministic ground truth."""
+
+    deterministic_recommendation: Recommendation
+    reasoning_recommendation: Recommendation
+    agree: bool
+    deterministic_composite: float
+    reasoning_score: float
+    score_delta: float = Field(description="reasoning_score - deterministic_composite.")
+    confidence_delta: float = Field(description="reasoning_conf - deterministic_conf.")
+    note: str = ""
+
+
+class ReasoningReport(BaseModel):
+    """Output of the v2 reasoning pipeline — the LLM's independent, agentic analysis."""
+
+    ticker: str
+    company_name: str
+    as_of: str
+
+    # The agent's own independent call (NOT used for the deterministic recommendation).
+    recommendation: Recommendation
+    sentiment: Sentiment
+    confidence: float = Field(ge=0.0, le=1.0)
+    reasoning_score: float = Field(ge=-1.0, le=1.0)
+    reasoning: str = ""
+
+    # Agentic transparency: plan, the dynamic tool calls it chose, and its self-critique.
+    plan: str = ""
+    tool_trace: list[ToolCallTrace] = Field(default_factory=list)
+    steps: list[ReasoningStep] = Field(default_factory=list)
+    reflection: str = ""
+
+    # Cost-aware routing telemetry.
+    model_used: str = ""
+    escalated: bool = False
+    retry_count: int = 0
+    tokens_in: int = 0
+    tokens_out: int = 0
+    cost_usd: float = 0.0
+
+    # Side-by-side vs the deterministic engine.
+    comparison: ExperimentComparison
+    warnings: list[str] = Field(default_factory=list)
     disclaimer: str = ""

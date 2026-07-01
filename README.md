@@ -24,8 +24,9 @@ python -m pytest evals/ -q          # 31 tests
 ```
 
 No API key and no internet are required — the platform ships with bundled fixture
-data and a deterministic engine. Set `ANTHROPIC_API_KEY` to additionally get an
-LLM-written rationale (see *The LLM layer* below).
+data and a deterministic engine. Set `OPENAI_API_KEY` to additionally get an
+LLM-written rationale and the v2 reasoning experiment (see *The LLM layer* and
+*v2 — Reasoning experiment* below).
 
 ---
 
@@ -98,7 +99,7 @@ testable, letting a model free-hand the number would be both un-evaluable and a
 hallucination risk. So:
 
 - **Numbers and the decision** → deterministic scoring on fetched data.
-- **Prose / rationale** → optionally Claude, *narrating the already-decided facts*,
+- **Prose / rationale** → optionally an LLM (OpenAI), *narrating the already-decided facts*,
   and only after passing a grounding guardrail.
 
 This is what makes the eval suite meaningful and the guardrails real.
@@ -157,11 +158,59 @@ mixed / very high risk), `WEAK` (downtrend / unprofitable / negative / high risk
 
 ## The LLM layer (optional)
 
-Set `ANTHROPIC_API_KEY` and the synthesizer asks Claude (`claude-opus-4-8` by
-default, configurable via `TICKER_LLM_MODEL`) to write the rationale from the
-structured findings. The output must pass `verify_rationale_grounding` or it is
-discarded in favor of the deterministic rationale (the report's `rationale_source`
-field records which was used). The decision and all numbers are unchanged either way.
+Set `OPENAI_API_KEY` and the synthesizer asks OpenAI (`gpt-4o-mini` by default) to
+write the rationale from the structured findings. The output must pass
+`verify_rationale_grounding` or it is discarded in favor of the deterministic
+rationale (the report's `rationale_source` field records which was used). The
+decision and all numbers are unchanged either way.
+
+---
+
+## v2 — Reasoning experiment & OpenAI cost router
+
+v2 adds a **parallel, experimental reasoning pipeline** and migrates the entire LLM
+layer from Anthropic to **OpenAI**. The deterministic engine above is **unchanged** and
+remains the system's authoritative recommendation. All v2 code is marked with `v2`
+docstrings / `# --- v2 ---` comment markers so before/after is obvious.
+
+### What it is
+
+`GET /api/reason?ticker=AAPL` runs a genuinely *agentic* loop **alongside** the
+deterministic engine and shows the two side-by-side (also surfaced in the web UI via the
+**🧪 Run LLM reasoning experiment** button):
+
+```
+            ┌─────────────── same MarketData ───────────────┐
+            ▼                                                ▼
+   Deterministic engine                          LLM reasoning agent (v2)
+   (authoritative, unchanged)                    plan → act → decide → reflect → retry
+            │                                                │
+            └───────────────► ExperimentComparison ◄─────────┘
+                         (agree? score / confidence deltas)
+```
+
+The agent (`app/reasoning/agent.py`) **plans**, then issues **dynamic tool calls**
+(`get_price_technicals`, `get_fundamentals`, `get_sentiment_inputs`, `get_risk_metrics` —
+raw data only, *not* the deterministic scores, so its view is independent), then
+**decides** a structured Buy/Sell/Hold, then **reflects** on its own call. If the
+reflection is weak (low self-confidence, inconsistent, or every tool errored) it
+**retries with escalation**.
+
+### Cost-aware two-tier router
+
+Every call defaults to the **cheap** model (`gpt-4o-mini`); the agent escalates to the
+**strong** model (`gpt-4o`) *only* when reflection fails. A `CostMeter`
+(`app/reasoning/openai_client.py`) meters token usage into USD via the price table in
+`app/config.py` and enforces an optional **per-run budget cap** (`TICKER_REASONING_BUDGET_USD`)
+— exceeding it aborts the experiment cleanly (`402`) without touching the deterministic report.
+The report returns `model_used`, `escalated`, `retry_count`, tokens, and `cost_usd`.
+
+### Evals
+
+`evals/test_reasoning.py` drives the whole loop with a scripted **offline `FakeClient`**
+(no network/key): it verifies tool dispatch returns real fixture numbers, that a
+low-confidence reflection triggers cheap→strong escalation, that the `CostMeter` sums
+correctly and the budget cap raises, and that the comparison + schemas validate.
 
 ---
 
@@ -177,14 +226,19 @@ ticker-research-platform/
 │   ├── schemas.py             # pydantic contracts (output guardrail)
 │   ├── guardrails.py          # input / policy / grounding guardrails
 │   ├── indicators.py          # pure-numpy technical math
-│   ├── llm.py                 # optional Claude narrative
+│   ├── llm.py                 # optional OpenAI narrative (v2: migrated off Anthropic)
 │   ├── orchestrator.py        # the pipeline conductor
 │   ├── report_pdf.py          # reportlab PDF
-│   ├── main.py                # FastAPI: /api/analyze, /api/report, /api/health, /
+│   ├── main.py                # FastAPI: /api/analyze, /api/report, /api/reason, /api/health, /
 │   ├── agents/                # technical, fundamental, sentiment, risk, synthesizer
+│   ├── reasoning/             # v2: agentic LLM experiment + OpenAI cost router
+│   │   ├── openai_client.py   #   OpenAI wrapper, two-tier router, CostMeter + budget cap
+│   │   ├── tools.py           #   dynamic function-calling tools over MarketData
+│   │   ├── agent.py           #   plan → act → decide → reflect → retry/escalate loop
+│   │   └── experiment.py      #   runs deterministic + reasoning, builds comparison
 │   ├── data/                  # provider abstraction + fixtures/
-│   └── frontend/index.html    # single-page UI
-└── evals/                     # pytest suite (agents, recommendation, guardrails)
+│   └── frontend/index.html    # single-page UI (+ v2 experiment panel)
+└── evals/                     # pytest suite (agents, recommendation, guardrails, reasoning)
 ```
 
 ## API
@@ -194,15 +248,18 @@ ticker-research-platform/
 | `GET /` | Web UI |
 | `GET /api/analyze?ticker=AAPL` | JSON report |
 | `GET /api/report?ticker=AAPL` | PDF download |
-| `GET /api/health` | Status, data source, LLM availability, fixture list |
+| `GET /api/reason?ticker=AAPL` | **v2** — LLM reasoning experiment vs deterministic (needs `OPENAI_API_KEY`; `503` without) |
+| `GET /api/health` | Status, data source, LLM availability, tiers, budget, fixture list |
 
 ## Configuration (env)
 
 | Variable | Default | Meaning |
 |----------|---------|---------|
 | `TICKER_DATA_SOURCE` | `auto` | `auto` \| `live` \| `fixture` |
-| `ANTHROPIC_API_KEY` | _unset_ | Enables the LLM rationale layer |
-| `TICKER_LLM_MODEL` | `claude-opus-4-8` | Model for narrative synthesis |
+| `OPENAI_API_KEY` | _unset_ | Enables the LLM rationale layer + v2 reasoning experiment |
+| `TICKER_LLM_TIER_CHEAP` | `gpt-4o-mini` | Default (cheap) model — used for everything |
+| `TICKER_LLM_TIER_STRONG` | `gpt-4o` | Escalation (strong) model — only on reflection failure |
+| `TICKER_REASONING_BUDGET_USD` | `0.05` | Per-run spend cap for `/api/reason` (`0` disables) |
 
 ---
 

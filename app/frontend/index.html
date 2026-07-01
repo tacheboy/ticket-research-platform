@@ -51,6 +51,21 @@
          border-radius:8px; margin-top:16px; }
   .spin { text-align:center; color:var(--muted); margin-top:24px; }
   footer { text-align:center; color:var(--muted); font-size:11px; padding:20px; max-width:760px; margin:0 auto; }
+  /* --- v2: reasoning experiment panel --- */
+  .v2panel { border:1px dashed var(--accent); }
+  .v2tag { display:inline-block; font-size:10px; font-weight:700; letter-spacing:.5px; color:var(--accent);
+           border:1px solid var(--accent); border-radius:5px; padding:1px 6px; margin-left:8px; vertical-align:middle; }
+  .cmp { display:grid; grid-template-columns:1fr 1fr; gap:12px; margin:10px 0; }
+  .cmp .col { border:1px solid var(--border); border-radius:10px; padding:12px 14px; }
+  .cmp .col h4 { margin:0 0 8px; font-size:12px; color:var(--muted); text-transform:uppercase; letter-spacing:.5px; }
+  .agree { padding:8px 12px; border-radius:8px; font-size:13px; font-weight:600; margin:8px 0; }
+  .agree.yes { background:#0f2e1a; border:1px solid #1a7f37; color:var(--buy); }
+  .agree.no { background:#3a2d0a; border:1px solid #6a5009; color:var(--hold); }
+  .trace { font-size:12px; }
+  .trace td { padding:5px 8px; }
+  .trace code { color:var(--accent); }
+  .costbar { display:flex; gap:18px; flex-wrap:wrap; font-size:12px; color:var(--muted); margin-top:8px; }
+  .costbar b { color:var(--text); }
 </style>
 </head>
 <body>
@@ -132,7 +147,10 @@ function render(d, queried){
       <div style="display:flex;justify-content:space-between;align-items:start;gap:10px;flex-wrap:wrap">
         <div><h2 style="border:0;margin:0">${d.company_name} (${d.ticker})</h2>
           <div style="color:var(--muted);font-size:12px">as of ${d.as_of} · data: ${d.data_source}</div></div>
-        <button class="secondary" onclick="dl('${d.ticker}')">⬇ Download PDF</button>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <button class="secondary" onclick="dl('${d.ticker}')">⬇ Download PDF</button>
+          <button class="secondary" onclick="runExperiment('${d.ticker}')">🧪 Run LLM reasoning experiment (v2)</button>
+        </div>
       </div>
       <div class="banner" style="margin-top:14px">
         <div class="rec ${d.recommendation}">${d.recommendation}</div>
@@ -146,12 +164,73 @@ function render(d, queried){
       </div>
       ${warns}
       <h2>Rationale</h2>
-      <div class="src">Narrative source: ${d.rationale_source==='llm'?'Claude (LLM)':'deterministic engine'}</div>
+      <div class="src">Narrative source: ${d.rationale_source==='llm'?'OpenAI (LLM)':'deterministic engine'}</div>
       <div class="rationale">${escapeHtml(d.rationale)}</div>
       <h2>Key Metrics</h2>
       <table>${metrics}</table>
       <h2>Specialist Agent Breakdown</h2>
       ${agents}
+    </div>
+    <div id="experiment"></div>`;
+}
+
+// --- v2: LLM reasoning experiment (side-by-side with the deterministic engine) ---
+async function runExperiment(t){
+  const box = $('experiment');
+  box.innerHTML = '<div class="spin">🧪 Running agentic LLM reasoning (plan → tools → reflect → decide)…</div>';
+  try {
+    const res = await fetch('/api/reason?ticker=' + encodeURIComponent(t));
+    const data = await res.json();
+    if(!res.ok){ box.innerHTML = `<div class="err">${data.detail || 'Reasoning unavailable'}</div>`; return; }
+    renderExperiment(data);
+  } catch(e){
+    box.innerHTML = `<div class="err">Reasoning request failed: ${e.message}</div>`;
+  }
+}
+
+function renderExperiment(d){
+  const c = d.comparison;
+  const agree = c.agree
+    ? `<div class="agree yes">✓ Agreement — the LLM agent independently reached the same call (${c.reasoning_recommendation}).</div>`
+    : `<div class="agree no">⚠ Divergence — deterministic says <b>${c.deterministic_recommendation}</b>, LLM agent says <b>${c.reasoning_recommendation}</b>. The deterministic engine remains authoritative.</div>`;
+
+  const trace = (d.tool_trace||[]).map(s =>
+    `<tr><td>${s.step}</td><td><code>${s.tool}</code></td>
+     <td>${s.error ? '<span class="neg">'+s.error+'</span>' : Object.keys(s.result).length+' fields'}</td></tr>`).join('');
+
+  $('experiment').innerHTML = `
+    <div class="panel v2panel">
+      <h2 style="border:0;margin:0 0 4px">Reasoning Experiment <span class="v2tag">v2 · EXPERIMENTAL</span></h2>
+      <div style="color:var(--muted);font-size:12px;margin-bottom:8px">
+        An OpenAI agent forms its own call from raw data. Not used for the official recommendation.</div>
+      ${agree}
+      <div class="cmp">
+        <div class="col">
+          <h4>Deterministic engine (authoritative)</h4>
+          <div class="rec ${c.deterministic_recommendation}" style="font-size:20px;display:inline-block">${c.deterministic_recommendation}</div>
+          <div style="margin-top:8px;font-size:13px">Composite score <b>${c.deterministic_composite>=0?'+':''}${c.deterministic_composite.toFixed(2)}</b></div>
+        </div>
+        <div class="col">
+          <h4>LLM reasoning agent</h4>
+          <div class="rec ${d.recommendation}" style="font-size:20px;display:inline-block">${d.recommendation}</div>
+          <div style="margin-top:8px;font-size:13px">Score <b>${d.reasoning_score>=0?'+':''}${d.reasoning_score.toFixed(2)}</b> ·
+            Confidence <b>${(d.confidence*100).toFixed(0)}%</b> · Sentiment <b>${d.sentiment}</b></div>
+        </div>
+      </div>
+      <h2>Agent Plan</h2>
+      <div class="rationale">${escapeHtml(d.plan)}</div>
+      <h2>Dynamic Tool Calls</h2>
+      <table class="trace"><tr><th>#</th><th>Tool</th><th>Result</th></tr>${trace || '<tr><td colspan="3">No tool calls recorded.</td></tr>'}</table>
+      <h2>Reasoning</h2>
+      <div class="rationale">${escapeHtml(d.reasoning)}</div>
+      ${d.reflection ? `<h2>Self-Reflection</h2><div class="rationale">${escapeHtml(d.reflection)}</div>` : ''}
+      <div class="costbar">
+        <div>Model used: <b>${d.model_used}</b></div>
+        <div>Escalated: <b>${d.escalated ? 'yes (cheap→strong)' : 'no'}</b></div>
+        <div>Retries: <b>${d.retry_count}</b></div>
+        <div>Tokens: <b>${d.tokens_in}↑ / ${d.tokens_out}↓</b></div>
+        <div>Cost: <b>$${d.cost_usd.toFixed(5)}</b></div>
+      </div>
     </div>`;
 }
 

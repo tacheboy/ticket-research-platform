@@ -7,10 +7,12 @@ yfinance>=0.2.40
 numpy>=1.26.0
 
 # LLM (optional — system runs fully without an API key)
-anthropic>=0.40.0
+# v2: migrated from Anthropic to OpenAI (narrator + reasoning experiment).
+openai>=1.40.0
 
 # PDF report generation
 reportlab>=4.0.0
 
 # Testing / evals
 pytest>=7.4.0
+python-dotenv

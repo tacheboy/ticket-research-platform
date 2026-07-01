@@ -3,4 +3,6 @@
 import os
 
 os.environ["TICKER_DATA_SOURCE"] = "fixture"
-os.environ.pop("ANTHROPIC_API_KEY", None)  # evals never hit the network/LLM
+# v2: the LLM layer is OpenAI now — strip its key so evals never hit the network/LLM.
+os.environ.pop("OPENAI_API_KEY", None)
+os.environ.pop("ANTHROPIC_API_KEY", None)

@@ -1,10 +1,14 @@
-"""Optional LLM narrative layer (Anthropic Claude).
+"""Optional LLM narrative layer. (narrator migrated Anthropic -> OpenAI, v2)
 
-The platform is fully functional without this. When ``ANTHROPIC_API_KEY`` is set,
-the synthesizer asks Claude to turn the *already-decided* recommendation and the
-computed signals into a readable rationale. Claude does NOT make the call or the
-math — it only narrates grounded facts, and its output is verified by
+The platform is fully functional without this. When ``OPENAI_API_KEY`` is set, the
+synthesizer asks OpenAI to turn the *already-decided* recommendation and the computed
+signals into a readable rationale. The model does NOT make the call or the math — it
+only narrates grounded facts, and its output is verified by
 ``guardrails.verify_rationale_grounding`` before being used.
+
+v2 note: this used to call Anthropic Claude. It now routes through the shared OpenAI
+client at the CHEAP tier — narration is an easy task, so paying for the strong model
+here would be wasteful. Signature and silent-degrade behavior are unchanged.
 """
 
 from __future__ import annotations
@@ -35,23 +39,22 @@ def generate_rationale(context: dict) -> str | None:
     if not is_available():
         return None
     try:
-        import anthropic
+        # --- v2 --- route narration through the shared OpenAI client (cheap tier).
+        from app.reasoning.openai_client import OpenAIClient
 
-        client = anthropic.Anthropic()
-        resp = client.messages.create(
-            model=config.LLM_MODEL,
-            max_tokens=600,
-            system=_SYSTEM,
-            messages=[{
-                "role": "user",
-                "content": (
+        client = OpenAIClient()
+        resp = client.chat(
+            messages=[
+                {"role": "system", "content": _SYSTEM},
+                {"role": "user", "content": (
                     "Write the rationale for this analysis. Use only these facts:\n\n"
                     + json.dumps(context, indent=2, default=str)
-                ),
-            }],
+                )},
+            ],
+            tier="cheap",
         )
-        parts = [b.text for b in resp.content if getattr(b, "type", None) == "text"]
-        text = "\n".join(parts).strip()
+        text = (resp.content or "").strip()
         return text or None
+        # --- end v2 ---
     except Exception:  # noqa: BLE001 - LLM is strictly optional; degrade silently
         return None

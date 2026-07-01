@@ -10,6 +10,10 @@ from app.data.provider import DataUnavailableError, FixtureProvider
 from app.guardrails import InvalidTickerError
 from app.orchestrator import Orchestrator
 from app.report_pdf import build_pdf
+# --- v2 ---
+from app.reasoning.experiment import run_experiment
+from app.reasoning.openai_client import BudgetExceededError, LLMUnavailableError
+# --- end v2 ---
 
 app = FastAPI(title="Ticker Research Platform", version=__version__)
 _orchestrator = Orchestrator()
@@ -28,7 +32,12 @@ def health() -> dict:
         "version": __version__,
         "data_source": _orchestrator.data_source,
         "llm_enabled": llm.is_available(),
-        "llm_model": config.LLM_MODEL if llm.is_available() else None,
+        # --- v2 --- OpenAI replaced Anthropic; expose the two-tier router + budget.
+        "openai_enabled": llm.is_available(),
+        "llm_tiers": {"cheap": config.LLM_TIER_CHEAP, "strong": config.LLM_TIER_STRONG}
+        if llm.is_available() else None,
+        "reasoning_budget_usd": config.REASONING_BUDGET_USD,
+        # --- end v2 ---
         "fixture_tickers": FixtureProvider().available_tickers(),
     }
 
@@ -60,3 +69,27 @@ def _run(ticker: str, use_llm: bool):
         raise HTTPException(status_code=400, detail=str(e)) from e
     except DataUnavailableError as e:
         raise HTTPException(status_code=404, detail=str(e)) from e
+
+
+# --- v2 ---
+@app.get("/api/reason")
+def reason(ticker: str = Query(..., description="Stock ticker, e.g. AAPL")) -> dict:
+    """Run the LLM reasoning experiment side-by-side with the deterministic engine.
+
+    This never alters the deterministic recommendation; it returns the agent's own
+    independent call plus a comparison. Requires OPENAI_API_KEY (503 if unset).
+    """
+    try:
+        return run_experiment(ticker).model_dump()
+    except InvalidTickerError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    except DataUnavailableError as e:
+        raise HTTPException(status_code=404, detail=str(e)) from e
+    except LLMUnavailableError as e:
+        raise HTTPException(
+            status_code=503,
+            detail="LLM reasoning is unavailable: set OPENAI_API_KEY to enable it.",
+        ) from e
+    except BudgetExceededError as e:
+        raise HTTPException(status_code=402, detail=str(e)) from e
+# --- end v2 ---

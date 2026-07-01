@@ -18,8 +18,36 @@ DATA_SOURCE = os.environ.get("TICKER_DATA_SOURCE", "auto").lower()
 
 
 # --- LLM (optional) -----------------------------------------------------------
-LLM_MODEL = os.environ.get("TICKER_LLM_MODEL", "claude-opus-4-8")
-HAS_API_KEY = bool(os.environ.get("ANTHROPIC_API_KEY"))
+# --- v2 ---
+# The LLM layer was migrated from Anthropic Claude to OpenAI. Everything that used
+# to read ANTHROPIC_API_KEY / TICKER_LLM_MODEL now reads OpenAI settings below.
+# The deterministic core does NOT depend on any of this — it is all optional.
+OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "")
+HAS_API_KEY = bool(OPENAI_API_KEY)
+
+# Cost-aware two-tier router. We default every call to the cheap model and only
+# escalate to the strong model when the agent's reflection fails or confidence is
+# too low (see app/reasoning/agent.py). Both are env-overridable.
+LLM_TIER_CHEAP = os.environ.get("TICKER_LLM_TIER_CHEAP", "gpt-4o-mini")
+LLM_TIER_STRONG = os.environ.get("TICKER_LLM_TIER_STRONG", "gpt-4o")
+
+# Price table in USD per 1K tokens (input, output). Used by the CostMeter to turn
+# token usage into dollars. Tunable here so pricing changes never touch code.
+# Values reflect public OpenAI list prices at time of writing; adjust as needed.
+MODEL_PRICES: dict[str, tuple[float, float]] = {
+    "gpt-4o-mini": (0.00015, 0.00060),
+    "gpt-4o": (0.00250, 0.01000),
+}
+
+# Optional hard ceiling on how much one /api/reason run may spend. 0 disables the
+# cap. When exceeded the run aborts cleanly (the deterministic report is unaffected).
+REASONING_BUDGET_USD = float(os.environ.get("TICKER_REASONING_BUDGET_USD", "0.05"))
+
+# Agentic loop bounds and the reflection gate that triggers cheap->strong escalation.
+MAX_TOOL_STEPS = int(os.environ.get("TICKER_MAX_TOOL_STEPS", "8"))
+MAX_ESCALATIONS = int(os.environ.get("TICKER_MAX_ESCALATIONS", "1"))
+REFLECTION_CONFIDENCE_FLOOR = float(os.environ.get("TICKER_REFLECTION_FLOOR", "0.55"))
+# --- end v2 ---
 
 
 # --- Recommendation engine ----------------------------------------------------
